@@ -164,11 +164,13 @@ public class FileUIHelpers
         UIManager.Instance.FileDialogManager.SaveFileDialog("Export Pose###export_pose", "Pose Files (*.livepose | *.pose){.livepose,.pose}Live Pose File (*.livepose){.livepose}Pose File (*.pose){.pose}", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"), "",
                 (success, path) =>
                 {
-                    if(success)
-                    {
-
+                    if(success) {
                         if(!(path.EndsWith(".livepose") || path.EndsWith(".pose"))) {
-                            path += ".livepose";
+                            if (UIManager.Instance.FileDialogManager.TryGetSelectedFilter(out var selectedFilter) && selectedFilter.Equals("Pose File (*.pose)", StringComparison.InvariantCultureIgnoreCase)) {
+                                path += ".pose";
+                            } else {
+                                path += ".livepose";
+                            }
                         }
 
                         var directory = Path.GetDirectoryName(path);
