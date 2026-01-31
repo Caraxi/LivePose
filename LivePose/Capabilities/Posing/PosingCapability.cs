@@ -13,6 +13,7 @@ using LivePose.UI.Windows.Specialized;
 using OneOf;
 using OneOf.Types;
 using System.Collections.Generic;
+using System.Numerics;
 using LivePose.IPC;
 
 namespace LivePose.Capabilities.Posing;
@@ -375,6 +376,150 @@ public class PosingCapability : ActorCharacterCapability
         {
             // Model Flip (TODO: Implement)
         }
+    }
+    
+    public void MirrorPose()
+    {
+        // Mirrors the entire pose, Left/right bone pairs (_l/_r) are swapped with mirrored transforms.
+        // Center bones are mirrored in place. Weapons are swapped between hands.
+        // Should work with all bones. Has some drifting if you use it like 70 times, but, who is going to do that?!?!?!
+
+
+        var skeleton = SkeletonPosing.CharacterSkeleton;
+        if(skeleton == null || skeleton.Bones.Count == 0)
+            return;
+
+        var currentPose = GeneratePoseFile();
+        var mirroredPose = new PoseFile();
+
+        var processedBones = new HashSet<string>(); // We need to track processed bones to avoid double-processing left/right pairs in some instances 
+
+        foreach(var (boneName, transform) in currentPose.Bones)
+        {
+            if(processedBones.Contains(boneName))
+                continue;
+
+            var bone = skeleton.GetFirstVisibleBone(boneName);
+
+            // Skip j_ex bones (PartialId 4) &
+            // Skip partial root bones & skeleton root
+
+            if(bone == null) continue;
+
+            if(bone.Name.Contains("iv_shiri") || bone.Name.Contains("iv_kougan"))
+            {
+                continue;
+            }
+
+            if(bone.IsPartialRoot && !bone.IsSkeletonRoot)
+            {
+                mirroredPose.Bones[boneName] = transform;
+                continue;
+            }
+
+            // Check for left or right bone pair
+            string? oppositeBoneName = null;
+            if(boneName.EndsWith("_l"))
+            {
+                oppositeBoneName = boneName[..^1] + "r";
+                if(skeleton.GetFirstVisibleBone(oppositeBoneName) == null)
+                    oppositeBoneName = null;
+            }
+            else if(boneName.EndsWith("_r"))
+            {
+                oppositeBoneName = boneName[..^1] + "l";
+                if(skeleton.GetFirstVisibleBone(oppositeBoneName) == null)
+                    oppositeBoneName = null;
+            }
+
+            if(oppositeBoneName != null && currentPose.Bones.TryGetValue(oppositeBoneName, out var oppositeTransform))
+            {
+                // Swap left to right pair with mirrored transforms
+                mirroredPose.Bones[boneName] = MirrorBoneTransform(oppositeTransform);
+                mirroredPose.Bones[oppositeBoneName] = MirrorBoneTransform(transform);
+
+                processedBones.Add(boneName);
+                processedBones.Add(oppositeBoneName);
+            }
+            else
+            {
+                // Center bone to mirror in place
+                mirroredPose.Bones[boneName] = MirrorBoneTransform(transform);
+                processedBones.Add(boneName);
+            }
+            
+
+        }
+
+        // Swap and mirror weapon bones between main hand and off hand, maybe we should something with props/ornament too, but I would have to do more clever things
+        foreach(var (boneName, boneTransform) in currentPose.MainHand)
+        {
+            mirroredPose.OffHand[boneName] = MirrorBoneTransform(boneTransform);
+        }
+        foreach(var (boneName, boneTransform) in currentPose.OffHand)
+        {
+            mirroredPose.MainHand[boneName] = MirrorBoneTransform(boneTransform);
+        }
+
+        //This doesn't really work right, I need to do the same thing as the normal skeleton mirroring above to make this work properly, I can do that later
+        //foreach(var (boneName, boneTransform) in currentPose.Ornament)
+        //{
+        //    mirroredPose.MainHand[boneName] = MirrorBoneTransform(boneTransform);
+        //}
+
+        // This one will need something clever
+        //foreach(var (boneName, boneTransform) in currentPose.Prop)
+        //{
+        //    mirroredPose.MainHand[boneName] = MirrorBoneTransform(boneTransform);
+        //}
+
+
+        mirroredPose.ModelDifference = MirrorModelTransform(currentPose.ModelDifference);
+        mirroredPose.ModelAbsoluteValues = MirrorModelTransform(currentPose.ModelAbsoluteValues);
+
+        var options = new PoseImporterOptions(new BoneFilter(_posingService), TransformComponents.All);
+        ImportPose_Internal(mirroredPose, options: options, generateSnapshot: true, reset: true, reconcile: true);
+        
+        
+        if(GameObject.ObjectIndex == 0 && LivePose.TryGetService<HeelsService>(out var heelsService) && heelsService.IsAvailable) {
+            heelsService.SetPlayerPoseTag();
+        }
+    }
+    
+    private static Transform MirrorBoneTransform(Transform transform)
+    {
+        var euler = transform.Rotation.ToEuler();
+        euler.X = 180 - euler.X;
+        euler.Y = -euler.Y;
+        var mirroredRotation = euler.ToQuaternion();
+
+        var mirroredPosition = new Vector3(-transform.Position.X, transform.Position.Y, transform.Position.Z);
+
+        return new Transform
+        {
+            Position = mirroredPosition,
+            Rotation = mirroredRotation,
+            Scale = transform.Scale
+        };
+    }
+
+    private static Transform MirrorModelTransform(Transform transform)
+    {
+        // Mirrors a model transform across the YZ plane.
+        // Uses simple rotation mirroring (only negates Y rotation).
+
+        var mirroredPosition = new Vector3(-transform.Position.X, transform.Position.Y, transform.Position.Z);
+
+        var euler = transform.Rotation.ToEuler();
+        euler.Y = -euler.Y;
+        var mirroredRotation = euler.ToQuaternion();
+
+        return new Transform
+        {
+            Position = mirroredPosition,
+            Rotation = mirroredRotation,
+            Scale = transform.Scale
+        };
     }
 
     public record struct PoseStack(PoseInfo Info, Transform ModelTransform);

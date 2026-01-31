@@ -331,7 +331,7 @@ public class PosingOverlayToolbarWindow : Window
         {
             using(ImRaii.PushColor(ImGuiCol.Button, ThemeManager.CurrentTheme.Accent.AccentColor, enabled))
             {
-                if(ImGui.Button($"IK###bone_ik", new Vector2(buttonSize, buttonOperationSize)))
+                if(ImGui.Button($"IK###bone_ik", new Vector2(buttonOperationSize, buttonSize)))
                     ImGui.OpenPopup("overlay_bone_ik");
             }
         }
@@ -342,7 +342,7 @@ public class PosingOverlayToolbarWindow : Window
         
         
         using(ImRaii.Disabled(!posing.SkeletonPosing.PoseInfo.HasIKStacks)) {
-            if(ImGui.Button($"IK###clear_ik", new Vector2(buttonSize, buttonOperationSize))) {
+            if(ImGui.Button($"IK###clear_ik", new Vector2(buttonOperationSize, buttonSize))) {
                 var pose = new PoseFile();
                 posing.SkeletonPosing.ExportSkeletonPose(pose);
                 foreach(var p in pose.Bones.Keys) {
@@ -376,7 +376,21 @@ public class PosingOverlayToolbarWindow : Window
             }
            
         ImGui.SameLine();
-        PosingEditorCommon.DrawMirrorModeSelect(posing, new Vector2(buttonSize, buttonOperationSize));
+        PosingEditorCommon.DrawMirrorModeSelect(posing, new Vector2(buttonOperationSize, buttonSize));
+        
+        ImGui.SameLine();
+        
+        using(ImRaii.PushFont(UiBuilder.IconFont)) {
+            if(ImGui.Button($"{FontAwesomeIcon.Repeat.ToIconString()}###mirrorPose", new Vector2(buttonOperationSize, buttonSize))) {
+                posing.MirrorPose();
+            }
+        }
+        if(ImGui.IsItemHovered()) {
+            using(ImRaii.Tooltip()) {
+                ImGui.Text("Mirror Pose");
+                ImGui.TextColored(ImGuiColors.DalamudGrey, "Might look really bad for animated poses.\nUse at own risk.");
+            }
+        }
         
         if(_entityManager.TryGetCapabilityFromSelectedEntity<ActionTimelineCapability>(out var timelineCapability)) {
 
